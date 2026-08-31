@@ -1,0 +1,7 @@
+httpx
+pandas
+pydantic
+python-dotenv
+pytest
+streamlit
+tenacity
