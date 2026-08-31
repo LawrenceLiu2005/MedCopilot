@@ -32,3 +32,14 @@ def test_resolve_ncbi_email_env_overrides_workspace(tmp_path: Path, monkeypatch)
     path = tmp_path / "workspace.json"
     save_workspace([], None, "saved@example.com", path=path)
     assert resolve_ncbi_email(workspace_path=path) == "env@example.com"
+
+
+def test_resolve_ncbi_email_from_streamlit_secrets(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("NCBI_EMAIL", raising=False)
+    monkeypatch.setattr(
+        "src.config.ncbi_credentials._streamlit_secret",
+        lambda name: "secret@example.com" if name == "NCBI_EMAIL" else None,
+    )
+    path = tmp_path / "workspace.json"
+    save_workspace([], None, "saved@example.com", path=path)
+    assert resolve_ncbi_email(workspace_path=path) == "secret@example.com"
