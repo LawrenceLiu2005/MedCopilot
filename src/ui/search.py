@@ -253,7 +253,6 @@ def render_search_page() -> None:
         st.session_state.active_search = result
         st.session_state.results_page = 0
         st.session_state.results_status_filter = "未筛"
-        st.session_state.search_author_field = False
         st.session_state._workspace_corrupt = False
         history = st.session_state.get("history", [])
         history.append(result)
