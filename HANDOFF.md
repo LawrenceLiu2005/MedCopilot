@@ -8,43 +8,37 @@
 
 ## 当前进度
 
-**用户定义的最后一项已完成**：结果页摘要默认展开，初筛时无需再点「摘要」。MVP 核心闭环（搜 → 筛 → 导出 → 审计 → 历史对比 + 摘要可见）已全部齐全。单元测试 **79 passed**（4 项 live API 测试需联网与 NCBI 邮箱）。
+MVP 已推到 GitHub：**https://github.com/LawrenceLiu2005/MedCopilot**（`main`）。云端 Secrets 读取已接入代码。
 
-GitHub：本地还没有完整 Git 仓库（仅有残缺 `.git`）。已确认 GitHub 账号 `LawrenceLiu2005` 已登录 `gh`，且尚无 `MedCopilot` 仓库。**推送因当前会话仍处计划模式、切换执行模式被拒绝而暂停。**
+**Streamlit Community Cloud 应用尚未创建完成**：需要你用 GitHub 在浏览器登录授权（我这边不能替你输入 GitHub 密码）。一键部署页：
+
+https://share.streamlit.io/deploy?repository=LawrenceLiu2005/MedCopilot&branch=main&mainModule=app.py
+
+登录后 Main file 选 `app.py`，Secrets 填 `NCBI_EMAIL`（可选 `NCBI_API_KEY`）。
 
 ## 本次做了什么
 
-- 确认部署路径：Streamlit Cloud 发链接给导师；不用 Vercel / dmg
-- 核对：`.env` 已在 `.gitignore`；无 `secrets.toml`；`gh` 已登录
+- 初始化 Git，首次提交并推送；`.env`、`.data/`、`.streamlit/secrets.toml` 未入库
+- NCBI 邮箱/Key 增加 Streamlit Secrets 读取，便于上线后不用本地 `.env`
+- 离线+联网测试 **80 passed**；演示主题 E2E（二甲双胍 RCT）**1 passed**
+- 本机 `streamlit run app.py` 页面可打开（http://localhost:8501）
 
 ## 下一次建议做什么
 
-1. 在 **Agent 模式**下执行：补全 `.gitignore`（加上 `.streamlit/secrets.toml`）→ `git init` → 首次提交 → `gh repo create MedCopilot --public --source=. --push`
-2. 再按 [DEPLOY.md](DEPLOY.md) 做 Streamlit Cloud
-3. 按 [docs/DEMO.md](docs/DEMO.md) 走一遍后把网址发给导师
+1. 用 GitHub 登录上面的 Streamlit 部署页，创建应用并填 Secrets
+2. 打开得到的 `*.streamlit.app` 网址，点「填入示例检索」走一遍
+3. 把下面「发给导师」的三段话 + 网址发给导师
 
 ## 你需要知道的事
 
-- 摘要仍可手动收起 expander；PubMed 无摘要的文献会显示「摘要不可用」
-- 审计报告为 Markdown，可用 Word 或浏览器「打印为 PDF」
-- 对外一句话：**把 PubMed 检索变成可提交、可复查、可导出的初筛工作台**
+- 发给导师时说明：试用稿请挑别扭处；建议点「填入示例检索」；重要操作请导出；尽量不要两人同时猛用同一网址
+- 关掉页面或云端重启后，筛过的记录可能丢失
+- 不要用 Vercel / 不要做 dmg
 
 ## 阻塞 / 待你提供
 
-- [ ] 允许切换到 Agent 模式（或你本机自己跑下面命令），才能真正提交 GitHub
-- [ ] Streamlit Cloud Deploy
-
-本机可自行执行：
-
-```bash
-cd /Users/yuchenliu/Desktop/MedCopilot
-# 在 .gitignore 末尾加上：.streamlit/secrets.toml
-git init
-git add .
-git status   # 确认没有 .env、.data/
-git commit -m "Add Evidence Copilot MVP for Streamlit Cloud deploy."
-gh repo create MedCopilot --public --source=. --push
-```
+- [ ] 在浏览器完成 Streamlit Cloud 的 GitHub 登录与 Deploy（约 2 分钟）
+- [ ] 把生成的 `*.streamlit.app` 网址补进发给导师的消息
 
 **命令**：
 
