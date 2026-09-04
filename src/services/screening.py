@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from src.models.evidence import EXCLUSION_PRESETS, EvidenceRecord, ScreeningStatus
+from src.models.evidence import EXCLUSION_PRESETS, EvidenceRecord, ScreeningHistoryEntry, ScreeningStatus
 
 OTHER_PREFIX = "Other: "
 EXCLUSION_PLACEHOLDER = "请选择排除原因"
@@ -59,6 +59,15 @@ def flag_potential_duplicates(
     threshold: float = 0.92,
 ) -> list[EvidenceRecord]:
     """标题相似则标记 Potential Duplicate，不删除记录。"""
+    flagged = _flag_title_similarity(records, threshold=threshold)
+    return flag_duplicates_bib_dedupe(flagged)
+
+
+def _flag_title_similarity(
+    records: list[EvidenceRecord],
+    *,
+    threshold: float = 0.92,
+) -> list[EvidenceRecord]:
     flagged_pmids: set[str] = set()
     norms = [(record.pmid, normalize_title(record.title)) for record in records]
     for index, (pmid_a, norm_a) in enumerate(norms):
@@ -74,6 +83,87 @@ def flag_potential_duplicates(
         record.model_copy(update={"potential_duplicate": record.pmid in flagged_pmids})
         for record in records
     ]
+
+
+def flag_duplicates_bib_dedupe(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
+    """整合 bib-dedupe：标记可能重复，不删除记录。"""
+    if len(records) < 2:
+        return records
+    try:
+        import pandas as pd
+        from bib_dedupe import bib_dedupe
+        from bib_dedupe.cluster import get_connected_components
+    except ImportError:
+        return records
+
+    rows = []
+    for record in records:
+        author = record.authors[0] if record.authors else ""
+        rows.append(
+            {
+                "ID": record.pmid,
+                "ENTRYTYPE": "article",
+                "title": record.title,
+                "author": author,
+                "year": record.publication_year or 0,
+                "doi": record.doi or "",
+                "journal": record.journal or "",
+                "abstract": record.abstract or "",
+            }
+        )
+    records_df = pd.DataFrame(rows)
+    try:
+        prep_df = bib_dedupe.prep(records_df)
+        blocked_df = bib_dedupe.block(prep_df, cpu=1)
+        matched_df = bib_dedupe.match(blocked_df, cpu=1)
+        clusters = get_connected_components(matched_df)
+    except Exception:
+        return records
+
+    flagged_pmids: set[str] = set()
+    for cluster in clusters:
+        if len(cluster) < 2:
+            continue
+        flagged_pmids.update(str(pmid) for pmid in cluster)
+
+    return [
+        record.model_copy(
+            update={"potential_duplicate": record.potential_duplicate or record.pmid in flagged_pmids}
+        )
+        for record in records
+    ]
+
+
+def count_exclusion_reasons(records: list[EvidenceRecord]) -> dict[str, int]:
+    """统计各排除原因篇数。"""
+    counts: dict[str, int] = {}
+    for record in records:
+        if record.screening_status != ScreeningStatus.EXCLUDE:
+            continue
+        reason = record.exclusion_reason or "未填写"
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def _append_history(
+    record: EvidenceRecord,
+    status: ScreeningStatus,
+    exclusion_reason: str | None,
+    notes: str | None,
+) -> list[ScreeningHistoryEntry]:
+    """追加初筛决策审计记录。"""
+    from datetime import datetime, timezone
+
+    history = [entry.model_copy(deep=True) for entry in record.screening_history]
+    history.append(
+        ScreeningHistoryEntry(
+            status=status,
+            exclusion_reason=exclusion_reason,
+            notes=notes,
+            changed_at=datetime.now(timezone.utc),
+        )
+    )
+    return history
 
 
 def parse_exclusion_reason(reason: str | None) -> tuple[str, str]:
@@ -182,6 +272,9 @@ def bulk_update_records(
                 update={
                     "screening_status": status,
                     "exclusion_reason": stored_reason,
+                    "screening_history": _append_history(
+                        record, status, stored_reason, record.notes
+                    ),
                 }
             )
         )
@@ -215,6 +308,7 @@ def update_record(
                     "screening_status": status,
                     "exclusion_reason": stored_reason,
                     "notes": notes,
+                    "screening_history": _append_history(record, status, stored_reason, notes),
                 }
             )
         )

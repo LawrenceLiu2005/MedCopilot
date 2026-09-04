@@ -5,3 +5,12 @@ python-dotenv
 pytest
 streamlit
 tenacity
+rispy
+nbib
+prisma-flow
+bib-dedupe
+search-query
+PythonMeta
+matplotlib
+statsmodels
+pypdf

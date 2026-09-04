@@ -27,7 +27,7 @@ Core principle:
 
 > **Reliable + Reproducible + Researcher-controlled**
 
-This is **not** a PubMed replacement, an auto systematic-review tool, or a runtime LLM product.
+This is **not** a PubMed replacement, an auto systematic-review tool, or an AI screening product.
 
 ## Hard constraints
 
@@ -40,8 +40,8 @@ These rules override convenience or feature ideas. See PRD §3, §6, §10, §11.
 - Keep **PubMed metadata separate** from user screening fields; screening edits must not mutate PubMed fields.
 - Dedup: **PMID exact match**, then **DOI exact match** only. Title similarity may flag `Potential Duplicate` but must not remove records.
 - Missing data stays `null` / unavailable; never guess. On API failure, show a clear error — **no fake results**.
-- **No runtime LLM** in MVP. Dev-time AI tools are fine; they are not product runtime components.
-- **Out of scope for MVP**: React, FastAPI, PostgreSQL, Redis, Docker, Tauri, user accounts, OpenAlex, LLM APIs.
+- **No runtime LLM for screening or abstract rewriting.** Optional DeepSeek may suggest English PICO from a Chinese research question, and may draft extraction numbers from title + abstract and/or open/uploaded full text; the researcher must confirm; missing numbers stay empty (never 0); MeSH still comes from NCBI. Do not add AI screening. Do not bypass paywalls to fetch full text.
+- **Out of scope for MVP**: React, FastAPI, PostgreSQL, Redis, Docker, Tauri, user accounts, OpenAlex. Do not add AI screening.
 
 ## MVP scope
 
@@ -176,7 +176,7 @@ MVP is done when a **real medical research topic** completes end-to-end:
 
 ## Skip unless asked
 
-- Future AI / PICO / query suggestion / AI screening (PRD §11)
+- AI screening suggestions (PRD §11)
 - OpenAlex, citation graph, desktop app, auth, databases, Docker
 
 ## Commands
@@ -185,7 +185,7 @@ Run from repo root after scaffold exists:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # set NCBI_EMAIL, NCBI_API_KEY
+cp .env.example .env   # set NCBI_EMAIL, NCBI_API_KEY, optional DEEPSEEK_API_KEY
 streamlit run app.py
 pytest
 ```

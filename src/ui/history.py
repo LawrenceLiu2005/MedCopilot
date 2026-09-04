@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import streamlit as st
 
+from src.clients.pubmed import PubMedConfigError, PubMedError
 from src.services.screening import count_by_status
-from src.services.search import SearchResult, compare_search_pmids
+from src.services.search import SearchParams, SearchResult, compare_search_pmids, merge_living_search, run_search
+from src.services.query_translate import translate_pubmed_query, translation_text
 from src.services.storage import save_workspace, workspace_from_json, workspace_to_json
 from src.ui.results import SORT_LABELS, sync_active_search
-from src.ui.search import apply_search_to_form
+from src.ui.search import _activate_search_result, _finalize_records, apply_search_to_form
+from src.ui.setup import build_pubmed_client
 
 
 def render_history_page() -> None:
@@ -53,6 +56,55 @@ def render_history_page() -> None:
                     sync_active_search()
                     st.success("已载入。请到左侧点「结果」查看；搜索页已填回本次条件，可微调后再搜。")
                     st.rerun()
+                if item.source_type == "pubmed_search" and st.button(
+                    "Living Search：重新执行",
+                    key=f"rerun_history_{item.search_id}_{index}",
+                ):
+                    try:
+                        with st.spinner("正在重新执行 PubMed 检索…"):
+                            fresh = run_search(
+                                SearchParams(
+                                    research_question=item.research_question,
+                                    query=item.query,
+                                    year_from=item.year_from,
+                                    year_to=item.year_to,
+                                    retmax=item.retmax,
+                                    sort=item.sort,
+                                    pico_population=item.pico_population,
+                                    pico_intervention=item.pico_intervention,
+                                    pico_comparator=item.pico_comparator,
+                                    pico_outcome=item.pico_outcome,
+                                    inclusion_criteria=item.inclusion_criteria,
+                                    exclusion_criteria=item.exclusion_criteria,
+                                ),
+                                client=build_pubmed_client(),
+                            )
+                    except (PubMedConfigError, PubMedError, ValueError) as exc:
+                        st.error(f"重新检索失败：{exc}")
+                    else:
+                        fresh.raw_query = item.raw_query
+                        fresh.author_wrap_applied = item.author_wrap_applied
+                        fresh.suggested_query = item.suggested_query
+                        fresh.query_suggestion_blocks = item.query_suggestion_blocks
+                        fresh.study_types = item.study_types
+                        fresh.pico_ai_used = item.pico_ai_used
+                        fresh.pico_ai_model = item.pico_ai_model
+                        fresh.pico_ai_prompt_version = item.pico_ai_prompt_version
+                        fresh.pico_ai_source_text = item.pico_ai_source_text
+                        fresh.pico_ai_draft = item.pico_ai_draft
+                        fresh.pico_ai_accepted = item.pico_ai_accepted
+                        translations = translate_pubmed_query(item.query)
+                        fresh.translated_wos = translation_text(translations, "wos")
+                        fresh.translated_ebsco = translation_text(translations, "ebscohost")
+                        fresh = _finalize_records(fresh)
+                        merged = merge_living_search(item, fresh)
+                        diff = compare_search_pmids(item, merged)
+                        msg = (
+                            f"Living Search 完成（新 ID: {merged.search_id}）。"
+                            f" 新增 {diff.added_count} 篇，消失 {diff.removed_count} 篇，"
+                            f"保留决策 {diff.common_count} 篇。"
+                        )
+                        _activate_search_result(merged, success_message=msg)
 
         _render_search_diff(history)
 

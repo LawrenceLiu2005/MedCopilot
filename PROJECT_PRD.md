@@ -328,9 +328,12 @@ Potential Duplicate
 ```text
 NCBI_EMAIL=
 NCBI_API_KEY=
+DEEPSEEK_API_KEY=
 ```
 
-如果没有 API Key，仍应使用安全的默认请求速率。
+`DEEPSEEK_API_KEY` 可选：仅用于把中文研究问题拆成英文 PICO，不用于筛文献。
+
+如果没有 NCBI API Key，仍应使用安全的默认请求速率。
 
 API 失败时：
 
@@ -446,6 +449,13 @@ Results
 History
 ```
 
+一期后新增（仍非 AI Chatbot）：
+
+```text
+流程（检索式建议 vs 实搜、去重、初筛历史、PRISMA、登记库对照）
+Meta 分析（摘要数字草稿须人确认 + 人工提取表 + 合并效应 / 森林图 / 漏斗图）
+```
+
 ---
 
 ## 10. 科研与数据原则
@@ -513,6 +523,41 @@ Inclusion / Exclusion Criteria
 但 AI 永远只能提供建议：
 
 > **AI assists the researcher; it does not make the final evidence-screening decision.**
+
+### 11.1 一期后：检索式建议、白话拆 PICO 与 meta
+
+允许：
+
+```text
+中文研究问题（PICO 全空）
+→ DeepSeek 拆成英文 PICO 草稿
+→ 人工预览确认后写入格子
+→ NCBI MeSH 词表匹配
+→ 生成可编辑检索式建议
+→ 人工确认后才写入检索框并搜索
+```
+
+PICO 已填写或研究问题不含汉字时，跳过 DeepSeek，直接走 MeSH 拼式。
+
+```text
+纳入文献
+→ 可拉取 PMC / Unpaywall 开放全文，或上传本地 PDF（如机构已购）
+→ DeepSeek 可从标题+摘要和/或全文提出数字草稿
+→ 人工预览确认后才写入提取表（也可全程手填）
+→ PythonMeta 合并（RevMan 5 算法；须人点「开始合并」）
+→ 森林图 / 漏斗图 / I²
+```
+
+约束：
+
+- 不得静默修改检索式，不得自动开搜。
+- 不得未确认就把提取草稿写入提取表；缺失保持空，不算 0。
+- 全文来源仅限 PMC 开放全文、Unpaywall 开放 PDF、或用户自行上传的 PDF；不得绕过付费墙爬取。
+- 确认提取后不得自动开始合并。
+- ClinicalTrials.gov 对照结果不得写入文献记录（与 PMID 分源）。
+- AI 只建议 PICO 与提取草稿，不筛文献、不编造 MeSH ID；主题词仍只来自 NCBI，查不到则标明未匹配。
+- 快照须记下：原句白话、模型名、提示词版本、模型草稿、人确认后的 PICO；已确认的提取草稿（PMID、模型、提示词版本、正文来源）。不得写入 API 密钥。
+- MeSH 查词使用 NCBI E-utilities（`db=mesh` 的 ESearch + ESummary），查不到则标明未匹配，不编造主题词。
 
 ---
 

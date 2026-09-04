@@ -12,7 +12,7 @@ from src.services.storage import (
 from src.ui.history import render_history_page
 from src.ui.results import render_results_page, sync_active_search
 from src.ui.search import render_search_page
-from src.ui.setup import get_ncbi_credentials, has_ncbi_credentials, mask_email, render_setup_page
+from src.ui.setup import get_deepseek_api_key, get_ncbi_credentials, has_ncbi_credentials, mask_email, render_setup_page
 
 # 学术液态玻璃：牛津蓝、Plex Sans + Noto Sans SC、玻璃高光与漫射阴影
 _ACADEMIC_GLASS_CSS = """
@@ -242,20 +242,36 @@ if not has_ncbi_credentials():
     st.stop()
 
 st.title("Evidence Copilot")
-st.caption("PubMed 可复现检索 · 检索审计留痕 · 人工初筛 · 标准导出")
+st.caption("PubMed 可复现检索 · 人工初筛 · 过程可视化 · 提取后 meta")
 
 st.sidebar.markdown("### Evidence Copilot")
 email, _ = get_ncbi_credentials()
 st.sidebar.caption(f"NCBI：{mask_email(email)}")
+if get_deepseek_api_key():
+    st.sidebar.caption("DeepSeek：已配置（白话拆 PICO、摘要/全文提取草稿）")
+else:
+    st.sidebar.caption("DeepSeek：未配置")
 st.sidebar.caption("工作台导航")
 st.sidebar.divider()
 
-page = st.sidebar.radio("导航", ["搜索", "结果", "历史", "设置"], label_visibility="collapsed")
+page = st.sidebar.radio(
+    "导航",
+    ["搜索", "结果", "流程", "Meta 分析", "历史", "设置"],
+    label_visibility="collapsed",
+)
 
 if page == "搜索":
     render_search_page()
 elif page == "结果":
     render_results_page()
+elif page == "流程":
+    from src.ui.process import render_process_page
+
+    render_process_page()
+elif page == "Meta 分析":
+    from src.ui.meta import render_meta_page
+
+    render_meta_page()
 elif page == "历史":
     render_history_page()
 else:

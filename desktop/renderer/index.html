@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Evidence Copilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div>
+          <h1>Evidence Copilot</h1>
+          <p class="subtitle">傻瓜式医学科研 Agent · Pi 官方内核</p>
+        </div>
+        <div class="header-actions">
+          <button id="btnSettings" class="ghost">设置</button>
+          <div class="status" id="status">就绪</div>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel chat-panel">
+          <h2>你想研究什么？</h2>
+          <textarea
+            id="researchIdea"
+            rows="4"
+            placeholder="例如：我想研究肝癌术后哪些患者更容易复发。"
+          ></textarea>
+          <div class="actions">
+            <button id="btnPropose" class="primary">开始评估（提议检索）</button>
+            <button id="btnPiAgent" class="secondary">交给 Pi Agent</button>
+          </div>
+          <div id="agentStream" class="stream" aria-live="polite"></div>
+        </section>
+
+        <section class="panel proposal-panel">
+          <h2>检索提议（须确认后才执行）</h2>
+          <div id="picoBlocks" class="blocks"></div>
+          <label class="field">
+            <span>PubMed 检索式</span>
+            <textarea id="proposedQuery" rows="3"></textarea>
+          </label>
+          <ul id="uncertainties" class="uncertainties"></ul>
+          <div class="actions">
+            <button id="btnApprove" class="primary" disabled>确认并执行 PubMed</button>
+          </div>
+        </section>
+
+        <section class="panel results-panel">
+          <h2>文献结果</h2>
+          <div id="searchSummary" class="summary"></div>
+          <div id="screeningStats" class="stats"></div>
+          <div class="actions export-actions" id="exportActions" hidden>
+            <button id="btnExportRis" class="secondary">导出 RIS</button>
+            <button id="btnExportCsv" class="secondary">导出 CSV</button>
+            <button id="btnExportSnapshot" class="secondary">导出 Snapshot</button>
+          </div>
+          <div id="records" class="records"></div>
+        </section>
+      </main>
+
+      <footer class="approval-dock" id="approvalDock" hidden>
+        <div>
+          <strong id="approvalTitle">需要你的确认</strong>
+          <p id="approvalText"></p>
+        </div>
+        <div class="actions">
+          <button id="btnReject" class="ghost">拒绝</button>
+          <button id="btnAllow" class="primary">批准</button>
+        </div>
+      </footer>
+    </div>
+
+    <dialog id="settingsDialog" class="settings-dialog">
+      <form id="settingsForm" method="dialog">
+        <h2>API 设置</h2>
+        <p class="hint">密钥保存在本机 Application Support 目录的 .env 文件中。</p>
+        <label class="field">
+          <span>NCBI 邮箱（必填）</span>
+          <input id="settingsNcbiEmail" type="email" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>NCBI API Key（可选，留空则不修改）</span>
+          <input id="settingsNcbiKey" type="password" autocomplete="off" placeholder="已保存则显示提示" />
+          <small id="settingsNcbiKeyHint"></small>
+        </label>
+        <label class="field">
+          <span>DeepSeek API Key（可选，用于 PICO 草稿）</span>
+          <input id="settingsDeepseekKey" type="password" autocomplete="off" placeholder="已保存则显示提示" />
+          <small id="settingsDeepseekKeyHint"></small>
+        </label>
+        <div class="actions">
+          <button type="button" id="btnSettingsCancel" class="ghost">取消</button>
+          <button type="submit" class="primary">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
