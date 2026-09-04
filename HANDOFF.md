@@ -4,29 +4,25 @@
 
 ## 最后更新
 
-2026-09-04
+2026-09-04（Phase 0.5 已 commit + tag + CI 绿）
 
 ## 当前进度
 
-**桌面版 Phase 0.5 已补完（代码）**：设置页、Pi 审批回传、初筛、导出 RIS/CSV/Snapshot、侧车 E2E 测试。
+**桌面版 Phase 0.5 已发版**：commit `0eb5081`，tag `desktop-v0.1.0`，GitHub Actions Desktop Release 已通过（macOS .dmg + Windows .exe artifact）。
 
 GitHub：**https://github.com/LawrenceLiu2005/MedCopilot**
 
 ## 本次做了什么
 
-- **设置页**：侧车 `get_settings` / `save_settings` → 写入 `~/Library/Application Support/EvidenceCopilot/.env`；桌面「设置」按钮。
-- **Pi 审批**：监听 `extension_ui_request`（confirm）→ 批准/拒绝回传 `extension_ui_response`。
-- **初筛**：侧车 `update_screening` + 桌面 record 卡片四态按钮与排除原因。
-- **导出**：侧车 `export_project`（ris/csv/snapshot）+ 桌面下载对话框。
-- **测试**：`tests/test_sidecar.py` 新增 settings / 全链 E2E（9 项侧车相关测试通过）。
-- **文档**：更新 `docs/DESKTOP.md` 完整竖切流程说明。
+- **收尾发版**：rebase 到 remote main → push → tag `desktop-v0.1.0`
+- **CI 验证**：Desktop Release workflow #33880390661 全绿（侧车测试 + .dmg 构建）
+- （此前）设置页、Pi 审批、初筛、导出、侧车 E2E 测试
 
 ## 下一次建议做什么
 
-1. 本机：`cd desktop && npm run dev`，走一遍 **设置 → 提议 → PubMed → 初筛 → 导出**。
-2. 安装 Pi：`npm i -g --ignore-scripts @earendil-works/pi-coding-agent`，试「交给 Pi Agent」+ 工具批准。
-3. 打 tag `desktop-v0.1.0` 触发 GitHub Actions 产出 .dmg。
-4. 按 `docs/PILOT_PLAN.md` 找 10–20 位医生试用。
+1. 从 GitHub Actions artifact 下载 `.dmg`，或手动创建 GitHub Release 挂上 artifact（`install.sh` 才可用）
+2. 本机：`cd desktop && npm run dev`，走一遍 **设置 → 提议 → PubMed → 初筛 → 导出**
+3. 按 `docs/PILOT_PLAN.md` 找 10–20 位医生试用
 
 ## 你需要知道的事
 
