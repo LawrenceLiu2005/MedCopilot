@@ -1,0 +1,9 @@
+{
+  "defaultModel": "deepseek/deepseek-chat",
+  "defaultThinkingLevel": "off",
+  "steeringMode": "all",
+  "followUpMode": "one-at-a-time",
+  "theme": "dark",
+  "enabledTools": [],
+  "disabledTools": ["bash", "write", "edit", "grep", "find", "ls", "read"]
+}

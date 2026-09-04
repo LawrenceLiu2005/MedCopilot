@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.models.evidence import EvidenceRecord, ScreeningStatus
+from src.models.evidence import EvidenceRecord, ExtractionData, ScreeningStatus
 from src.services.search import SearchResult
 from src.services.storage import (
     WORKSPACE_VERSION,
@@ -32,7 +32,17 @@ def _sample_search() -> SearchResult:
                 pmid="111",
                 title="Paper A",
                 screening_status=ScreeningStatus.INCLUDE,
+                reviewer2_status=ScreeningStatus.EXCLUDE,
                 notes="keep",
+                extraction=ExtractionData(
+                    e1=1,
+                    n1=10,
+                    e2=2,
+                    n2=10,
+                    ai_used=True,
+                    ai_model="deepseek-v4-flash",
+                    ai_prompt_version="extraction_suggest_v1",
+                ),
             ),
             EvidenceRecord(
                 pmid="222",
@@ -42,6 +52,15 @@ def _sample_search() -> SearchResult:
             ),
         ],
         executed_at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
+        translated_wos='TI="diabetes"',
+        translated_ebsco='TI "diabetes"',
+        suggested_query="diabetes[MeSH]",
+        pico_ai_used=True,
+        pico_ai_model="deepseek-v4-flash",
+        pico_ai_prompt_version="pico_extract_v1",
+        pico_ai_source_text="白话原句",
+        pico_ai_draft={"intervention": ["metformin"]},
+        pico_ai_accepted={"intervention": "metformin"},
     )
 
 
@@ -58,7 +77,18 @@ def test_save_and_load_roundtrip(tmp_path: Path):
     assert loaded.active_search.search_id == "abc12345"
     assert len(loaded.records) == 2
     assert loaded.records[0].screening_status == ScreeningStatus.INCLUDE
+    assert loaded.records[0].reviewer2_status == ScreeningStatus.EXCLUDE
     assert loaded.records[1].exclusion_reason == "Not relevant"
+    assert loaded.active_search.translated_wos == 'TI="diabetes"'
+    assert loaded.active_search.translated_ebsco == 'TI "diabetes"'
+    assert loaded.active_search.suggested_query == "diabetes[MeSH]"
+    assert loaded.active_search.pico_ai_used is True
+    assert loaded.active_search.pico_ai_model == "deepseek-v4-flash"
+    assert loaded.active_search.pico_ai_source_text == "白话原句"
+    assert loaded.records[0].extraction is not None
+    assert loaded.records[0].extraction.e1 == 1
+    assert loaded.records[0].extraction.ai_used is True
+    assert loaded.records[0].extraction.ai_model == "deepseek-v4-flash"
 
 
 def test_json_import_export_roundtrip():
@@ -77,6 +107,9 @@ def test_workspace_json_excludes_api_key():
     assert payload["version"] == WORKSPACE_VERSION
     assert "ncbi_email" in payload
     assert "ncbi_api_key" not in payload
+    dumped = json.dumps(payload)
+    assert "DEEPSEEK" not in dumped
+    assert "sk-" not in dumped
 
 
 def test_load_missing_file_returns_none(tmp_path: Path):

@@ -8,12 +8,30 @@ from datetime import datetime
 import streamlit as st
 
 from src.models.evidence import EXCLUSION_PRESET_ZH, EXCLUSION_PRESETS, EvidenceRecord, ScreeningStatus
-from src.services.export import filter_records_for_export, to_audit_report_md, to_csv, to_ris, to_search_snapshot
+from src.services.export import (
+    filter_records_for_export,
+    to_audit_report_md,
+    to_csv,
+    to_methods_draft_md,
+    to_ris,
+    to_search_snapshot,
+)
+from src.services.highlight import extract_keywords, highlight_text
+from src.services.prisma_diagram import prisma_to_png, prisma_to_svg
+from src.services.dual_screening import (
+    apply_reviewer2_status,
+    compute_agreement,
+    disagreements,
+    kappa_caption,
+    parse_reviewer2_csv,
+    reviewer2_template_csv,
+)
 from src.services.screening import (
     EXCLUSION_PLACEHOLDER,
     bulk_update_records,
     collect_publication_types,
     count_by_status,
+    count_exclusion_reasons,
     filter_by_publication_types,
     filter_by_status,
     format_exclusion_reason,
@@ -85,6 +103,11 @@ def render_results_page() -> None:
     if total > 0:
         st.progress(screened / total, text=f"初筛进度：已筛 {screened} / {total} 篇")
 
+    exclusion_counts = count_exclusion_reasons(records)
+    if exclusion_counts:
+        st.subheader("排除原因统计")
+        st.bar_chart(exclusion_counts)
+
     st.divider()
     if "results_status_filter" not in st.session_state:
         st.session_state.results_status_filter = "未筛"
@@ -106,6 +129,13 @@ def render_results_page() -> None:
     filtered = filter_by_status(records, STATUS_OPTIONS[filter_label])
     filtered = filter_by_publication_types(filtered, selected_types or None)
 
+    _render_dual_screening(records)
+
+    only_disagree = st.checkbox("只看两人初筛不一致", key="results_only_disagree")
+    if only_disagree:
+        disagree_pmids = {record.pmid for record in disagreements(st.session_state.records)}
+        filtered = [record for record in filtered if record.pmid in disagree_pmids]
+
     _render_bulk_actions(filtered)
 
     total_pages = max(1, math.ceil(len(filtered) / RESULTS_PAGE_SIZE))
@@ -117,6 +147,7 @@ def render_results_page() -> None:
     start = page * RESULTS_PAGE_SIZE
     end = start + RESULTS_PAGE_SIZE
     page_records = filtered[start:end]
+    keywords = extract_keywords(active)
 
     if not filtered:
         st.info("当前筛选下没有文献，可改状态或文献类型筛选。")
@@ -136,7 +167,7 @@ def render_results_page() -> None:
                 st.rerun()
 
     for record in page_records:
-        _render_card(record)
+        _render_card(record, keywords)
 
     sync_active_search()
     _render_export(st.session_state.records, filtered)
@@ -185,6 +216,59 @@ def _render_bulk_actions(filtered: list[EvidenceRecord]) -> None:
                     st.rerun()
 
 
+def _render_dual_screening(records: list[EvidenceRecord]) -> None:
+    """第二位筛查者 CSV 导入与一致性。"""
+    notice = st.session_state.pop("_reviewer2_notice", None)
+    if notice:
+        st.info(notice)
+    with st.expander("双人初筛（第二位筛查者）", expanded=False):
+        st.caption(
+            "第一位在本页点选初筛；第二位用 CSV 上传（PMID + 纳入/排除/待定）。"
+            "工具只计算一致性和 Cohen's Kappa，不自动裁定最终结果。"
+        )
+        template = reviewer2_template_csv(records)
+        st.download_button(
+            "下载第二位填写模板",
+            template,
+            file_name="reviewer2_template.csv",
+            mime="text/csv",
+            key="download_reviewer2_template",
+        )
+        uploaded = st.file_uploader(
+            "上传第二位筛查 CSV",
+            type=["csv"],
+            key="reviewer2_csv",
+        )
+        if st.button("导入第二位初筛", key="btn_import_reviewer2"):
+            if uploaded is None:
+                st.warning("请先选择 CSV 文件。")
+            else:
+                text = uploaded.read().decode("utf-8-sig")
+                mapping, invalid = parse_reviewer2_csv(text)
+                if not mapping and not invalid:
+                    st.error("未能识别 CSV。请包含 PMID 列，以及 Screening Status 或 Reviewer 2 Status 列。")
+                else:
+                    updated, summary = apply_reviewer2_status(st.session_state.records, mapping)
+                    summary.skipped_invalid_status = invalid
+                    st.session_state.records = updated
+                    msg = f"已写入第二位初筛 {summary.applied} 篇。"
+                    if summary.skipped_unknown_pmid:
+                        msg += f" 有 {len(summary.skipped_unknown_pmid)} 个 PMID 不在当前结果中，已跳过。"
+                    if invalid:
+                        msg += f" 有 {len(invalid)} 行状态无法识别，已跳过。"
+                    st.session_state._reviewer2_notice = msg
+                    st.rerun()
+
+        agreement = compute_agreement(st.session_state.get("records", records))
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("两人皆已决策", agreement.n_compared)
+        r2.metric("一致", agreement.n_agree)
+        r3.metric("不一致", agreement.n_disagree)
+        kappa_text = f"{agreement.kappa:.3f}" if agreement.kappa is not None else "—"
+        r4.metric("Cohen's Kappa", kappa_text)
+        st.caption(kappa_caption(agreement.kappa))
+
+
 def _render_search_context(active: SearchResult | None) -> None:
     """结果页只读检索上下文，便于核对可复现性。"""
     if active is None:
@@ -196,10 +280,16 @@ def _render_search_context(active: SearchResult | None) -> None:
         st.write(f"研究问题：{active.research_question}")
     st.markdown("**本次检索式**")
     st.code(active.query, language=None)
+    if active.suggested_query:
+        st.caption("建议检索式（生成后经人工核对）")
+        st.code(active.suggested_query, language=None)
+        if active.suggested_query.strip() != active.query.strip():
+            st.caption("实际检索式与建议式不同，以本次检索式为准。")
     st.caption(
         f"年份：{year_from} — {year_to} · 条数上限：{active.retmax} · "
         f"ID：{active.search_id} · 执行时间：{executed}"
     )
+    st.caption("流程：研究问题 → 检索式 → 检索 → 去重 → 初筛 → 提取 → Meta。细节见「流程」页。")
 
 
 def _render_hit_banner(active, retrieved: int) -> None:
@@ -298,12 +388,23 @@ def _export_filename(active: SearchResult | None, ext: str) -> str:
     return f"evidence_{active.search_id}_{date}.{ext}"
 
 
-def _render_card(record: EvidenceRecord) -> None:
+def _render_card(record: EvidenceRecord, keywords: list[str] | None = None) -> None:
     """单篇文献卡片。"""
     with st.container(border=True):
-        st.markdown(f"**{record.title}**")
+        title_html = highlight_text(record.title, keywords or [])
+        st.markdown(f'<div style="font-weight:600;font-size:1.05rem;">{title_html}</div>', unsafe_allow_html=True)
         if record.potential_duplicate:
             st.caption("⚠ 可能重复（标题相似，请人工核对）")
+        if record.reviewer2_status:
+            r2_label = SCREENING_CHOICE_LABELS[record.reviewer2_status]
+            if (
+                record.screening_status != ScreeningStatus.UNSCREENED
+                and record.reviewer2_status != ScreeningStatus.UNSCREENED
+                and record.screening_status != record.reviewer2_status
+            ):
+                st.caption(f"两人初筛不一致：第一位 {SCREENING_CHOICE_LABELS[record.screening_status]} · 第二位 {r2_label}")
+            else:
+                st.caption(f"第二位初筛：{r2_label}")
         st.caption(_format_meta_line(record))
 
         id_parts = [
@@ -324,7 +425,10 @@ def _render_card(record: EvidenceRecord) -> None:
 
         if record.abstract:
             with st.expander("摘要", expanded=True):
-                _render_abstract(record.abstract)
+                if keywords:
+                    st.markdown(highlight_text(record.abstract.replace("\n\n", "\n\n"), keywords), unsafe_allow_html=True)
+                else:
+                    _render_abstract(record.abstract)
         else:
             st.caption("摘要不可用")
 
@@ -444,3 +548,27 @@ def _render_export(records: list[EvidenceRecord], filtered: list[EvidenceRecord]
         mime="text/markdown",
         help="人类可读的检索记录，可贴进综述附录或用 Word/浏览器打印为 PDF",
     )
+
+    col5, col6, col7 = st.columns(3)
+    col5.download_button(
+        "下载检索方法草稿",
+        to_methods_draft_md(active, records=records),
+        file_name=f"methods_{active.search_id}.md",
+        mime="text/markdown",
+        help="按 PRISMA-S 能自动填写的项生成方法学段落，缺项会标「需作者补全」",
+    )
+    try:
+        col6.download_button(
+            "下载 PRISMA 图（SVG）",
+            prisma_to_svg(active, records=records),
+            file_name=f"prisma_{active.search_id}.svg",
+            mime="image/svg+xml",
+        )
+        col7.download_button(
+            "下载 PRISMA 图（PNG）",
+            prisma_to_png(active, records=records),
+            file_name=f"prisma_{active.search_id}.png",
+            mime="image/png",
+        )
+    except Exception as exc:
+        st.caption(f"PRISMA 图暂不可用：{exc}")

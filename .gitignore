@@ -1,5 +1,7 @@
 .env
 .data/
+desktop/node_modules/
+desktop/dist/
 __pycache__/
 .pytest_cache/
 .venv/

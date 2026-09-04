@@ -1,0 +1,53 @@
+{
+  "name": "evidence-copilot-desktop",
+  "version": "0.1.0",
+  "description": "Evidence Copilot — 傻瓜式医学科研 Agent 桌面版（Pi 官方 SDK + Python 侧车）",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "ai.evidencecopilot.desktop",
+    "productName": "Evidence Copilot",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "repo",
+        "filter": [
+          "src/**/*",
+          ".pi/**/*",
+          "requirements.txt",
+          "pyproject.toml",
+          ".env.example"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": ["dmg"],
+      "artifactName": "EvidenceCopilot-mac-${arch}.${ext}"
+    },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "EvidenceCopilot-win-${arch}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8"
+  }
+}

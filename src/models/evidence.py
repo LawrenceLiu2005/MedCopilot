@@ -29,6 +29,37 @@ EXCLUSION_PRESETS: list[str] = [
     "Other",
 ]
 
+class ScreeningHistoryEntry(BaseModel):
+    """单条初筛决策变更记录。"""
+
+    status: ScreeningStatus
+    exclusion_reason: str | None = None
+    notes: str | None = None
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ExtractionData(BaseModel):
+    """人工提取的 meta 分析数据；与 PubMed 字段分离，缺失保持 None。"""
+
+    datatype: str | None = None
+    e1: int | None = None
+    n1: int | None = None
+    e2: int | None = None
+    n2: int | None = None
+    m1: float | None = None
+    sd1: float | None = None
+    m2: float | None = None
+    sd2: float | None = None
+    study_label: str | None = None
+    subgroup: str | None = None
+    ai_used: bool = False
+    ai_model: str | None = None
+    ai_prompt_version: str | None = None
+    ai_quote: str | None = None
+    ai_draft: dict | None = None
+    ai_accepted: dict | None = None
+
+
 EXCLUSION_PRESET_ZH: dict[str, str] = {
     "Wrong population": "人群不符",
     "Wrong intervention": "干预不符",
@@ -55,9 +86,12 @@ class EvidenceRecord(BaseModel):
     publication_types: list[str] = Field(default_factory=list)
     abstract: str | None = None
     screening_status: ScreeningStatus = ScreeningStatus.UNSCREENED
+    reviewer2_status: ScreeningStatus | None = None
     exclusion_reason: str | None = None
     notes: str | None = None
     potential_duplicate: bool = False
+    screening_history: list[ScreeningHistoryEntry] = Field(default_factory=list)
+    extraction: ExtractionData | None = None
     source: str = "pubmed"
     retrieved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

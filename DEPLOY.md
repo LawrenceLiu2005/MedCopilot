@@ -33,6 +33,7 @@ gh repo create MedCopilot --public --source=. --push
 ```toml
 NCBI_EMAIL = "你的NCBI邮箱@example.com"
 NCBI_API_KEY = ""
+DEEPSEEK_API_KEY = ""
 ```
 
 保存后应用会自动重启。
@@ -67,3 +68,4 @@ NCBI_API_KEY = ""
 |-------------|-------------------|
 | `NCBI_EMAIL=` | `NCBI_EMAIL = "..."` |
 | `NCBI_API_KEY=` | `NCBI_API_KEY = "..."` |
+| `DEEPSEEK_API_KEY=` | `DEEPSEEK_API_KEY = "..."` |

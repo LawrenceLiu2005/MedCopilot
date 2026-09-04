@@ -16,13 +16,25 @@ PubMed 检索 → 核对检索式 → 人工初筛 → 导出 RIS / CSV / 审计
 
 **三个关键词**：可靠、可复现、你说了算（不是 AI 替你决定纳入哪些文献）。
 
+### v2.1 桌面 Agent（开发中，主交付方向）
+
+基于 **Pi 官方 Agent 内核** 的傻瓜式医学科研桌面应用（**不绑 Streamlit**）：
+
+```bash
+# 用户安装（Release 发布后）
+curl -fsSL https://raw.githubusercontent.com/LawrenceLiu2005/MedCopilot/main/scripts/install.sh | bash
+# 或 brew install --cask evidence-copilot
+```
+
+开发者见 [docs/DESKTOP.md](docs/DESKTOP.md)。试用计划见 [docs/PILOT_PLAN.md](docs/PILOT_PLAN.md)。
+
 ### 和 Rayyan / Covidence 的区别
 
 | | Evidence Copilot | Rayyan / Covidence |
 |--|------------------|---------------------|
 | 定位 | 可复现检索 + 轻量初筛桥梁 | 全流程系统评价协作平台 |
 | 协作 | 单人；可导出工作区 JSON 备份 | 多人盲筛、冲突解决 |
-| AI | 无运行时 AI | 常有 AI 辅助筛文献 |
+| AI | 白话可拆 PICO、摘要可提提取数字草稿（均须人确认）；不筛文献 | 常有 AI 辅助筛文献 |
 | 强项 | **检索审计留痕**、Query 预览、Search Snapshot | PRISMA 全流程、双人 κ |
 
 我们**不替代** Covidence；适合「我要可追溯地搜 PubMed 并初筛几十到几百篇」的场景。
@@ -48,6 +60,7 @@ PubMed 检索 → 核对检索式 → 人工初筛 → 导出 RIS / CSV / 审计
 | **检索审计** | 检索快照 JSON + **人类可读审计报告**（Markdown，可贴附录） |
 | **检索对比** | 历史页对比两次检索的 PMID 新增 / 消失 / 共有 |
 | **标准化导出** | RIS、CSV、检索快照；导出范围可选（全部 / 纳入+待定 / 仅纳入 / 当前筛选） |
+| **Meta 分析** | 纳入文献填提取表；可从摘要生成数字草稿，核对后写入；森林图 / 漏斗图 |
 
 ---
 
@@ -89,7 +102,7 @@ streamlit run app.py
 
 1. 推送项目到 **GitHub**  
 2. [share.streamlit.io](https://share.streamlit.io) → Create app → Main file: `app.py`  
-3. Secrets 配置 `NCBI_EMAIL`（及可选 `NCBI_API_KEY`）  
+3. Secrets 配置 `NCBI_EMAIL`（及可选 `NCBI_API_KEY`、`DEEPSEEK_API_KEY`）  
 4. Deploy  
 
 ---
@@ -103,7 +116,9 @@ streamlit run app.py
 | **搜索** | 检索式、示例一键填入、Query 预览、执行搜索 |
 | **结果** | 文献卡片、初筛、进度条、批量标记、导出与审计报告 |
 | **历史** | 检索记录、PMID 对比、工作区备份 |
-| **设置** | NCBI 邮箱 |
+| **设置** | NCBI 邮箱；可选 DeepSeek 密钥（白话拆 PICO、摘要/全文提取草稿） |
+| **流程** | 检索到合并的步骤对照 |
+| **Meta 分析** | 提取表、摘要草稿确认、合并出图 |
 
 ---
 
@@ -114,7 +129,9 @@ streamlit run app.py
 | [HANDOFF.md](HANDOFF.md) | 进度交接 |
 | [docs/DEMO.md](docs/DEMO.md) | 演示检索与截图清单 |
 | [DEPLOY.md](DEPLOY.md) | Streamlit Cloud 部署 |
-| [PROJECT_PRD.md](PROJECT_PRD.md) | 完整产品需求 |
+| [docs/DESKTOP.md](docs/DESKTOP.md) | Pi 桌面版开发与安装 |
+| [docs/PILOT_PLAN.md](docs/PILOT_PLAN.md) | 3 个月医生试用计划 |
+| [Evidence_Copilot_PRD_v2.1_Pi_Architecture.md](Evidence_Copilot_PRD_v2.1_Pi_Architecture.md) | v2.1 Research Agent PRD |
 | [AGENTS.md](AGENTS.md) | 开发规则 |
 
 ---
@@ -124,8 +141,12 @@ streamlit run app.py
 ```bash
 pip install -r requirements.txt
 cp .env.example .env   # 可选；或在 App 设置页填邮箱
-streamlit run app.py
+streamlit run app.py   # Legacy Streamlit 工作台
 pytest -v
+
+# 桌面 Agent（Pi + Electron）
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+cd desktop && npm install && npm run dev
 ```
 
 ---

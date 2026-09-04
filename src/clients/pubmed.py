@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -14,6 +15,8 @@ from src.models.evidence import EvidenceRecord
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 TIMEOUT = 30.0
+MAX_MESH_ENTRY_TERMS = 5
+MESH_LOOKUP_CANDIDATES = 5
 
 
 class PubMedError(Exception):
@@ -22,6 +25,18 @@ class PubMedError(Exception):
 
 class PubMedConfigError(PubMedError):
     """配置缺失或无效。"""
+
+
+@dataclass(frozen=True)
+class MeshLookupResult:
+    """NCBI MeSH 词表匹配结果；未匹配时 descriptor 为 None，不编造。"""
+
+    query: str
+    matched: bool
+    descriptor: str | None = None
+    mesh_id: str | None = None
+    entry_terms: tuple[str, ...] = ()
+    field_tag: str = "MeSH Terms"
 
 
 class PubMedClient:
@@ -59,6 +74,55 @@ class PubMedClient:
         missing_pmids = [pmid for pmid in pmids if pmid not in fetched_pmids]
         records = [EvidenceRecord.from_pubmed_dict(a) for a in articles]
         return total, records, missing_pmids
+
+    def fetch_by_pmids(self, pmids: list[str]) -> tuple[list[EvidenceRecord], list[str]]:
+        """按 PMID 列表拉回元数据，返回 (文献列表, 未能拉回的 PMID)。"""
+        cleaned = [str(p).strip() for p in pmids if str(p).strip()]
+        if not cleaned:
+            return [], []
+        articles = self._efetch(cleaned)
+        fetched_pmids = {str(a["pmid"]) for a in articles}
+        missing_pmids = [pmid for pmid in cleaned if pmid not in fetched_pmids]
+        records = [EvidenceRecord.from_pubmed_dict(a) for a in articles]
+        return records, missing_pmids
+
+    def lookup_mesh(self, term: str) -> MeshLookupResult:
+        """在 NCBI MeSH 词表中查找官方主题词与入口词；查不到则 matched=False。
+
+        NCBI 对 db=mesh 的 EFetch 常返回纯文本，因此用 ESummary JSON。
+        多个候选时只采用词表项能对上用户原文的记录，不取「相关但不同」的第一条。
+        解析失败不抛错，视为未匹配，避免整条建议中断。
+        """
+        cleaned = " ".join(term.split())
+        if not cleaned:
+            return MeshLookupResult(query=term, matched=False)
+        ids = self._esearch_ids(cleaned, db="mesh", retmax=MESH_LOOKUP_CANDIDATES)
+        if not ids:
+            return MeshLookupResult(query=cleaned, matched=False)
+        try:
+            response = self._get(
+                "esummary.fcgi",
+                {"db": "mesh", "id": ",".join(ids), "retmode": "json"},
+            )
+            payload = response.json()
+        except (PubMedError, ValueError, TypeError):
+            return MeshLookupResult(query=cleaned, matched=False)
+        summaries = _mesh_summaries_from_payload(payload, ids)
+        selected = select_best_mesh_summary(cleaned, summaries)
+        if selected is None:
+            return MeshLookupResult(query=cleaned, matched=False)
+        item, parsed = selected
+        descriptor, field_tag, entry_terms = parsed
+        filtered = _filter_entry_terms(descriptor, cleaned, entry_terms)
+        mesh_ui = str(item.get("ds_meshui") or item.get("uid") or "").strip() or None
+        return MeshLookupResult(
+            query=cleaned,
+            matched=True,
+            descriptor=descriptor,
+            mesh_id=mesh_ui,
+            entry_terms=tuple(filtered),
+            field_tag=field_tag,
+        )
 
     def _throttle(self) -> None:
         elapsed = time.monotonic() - self._last_request_at
@@ -134,6 +198,29 @@ class PubMedClient:
             raise PubMedError("PubMed ESearch 返回格式异常。") from exc
         return total, [str(pmid) for pmid in pmids]
 
+    def _esearch_ids(self, query: str, *, db: str, retmax: int = 1) -> list[str]:
+        """通用 ESearch，返回 ID 列表；无命中返回空列表。"""
+        params: dict[str, Any] = {
+            "db": db,
+            "term": query,
+            "retmax": retmax,
+            "retmode": "json",
+        }
+        response = self._get("esearch.fcgi", params)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise PubMedError("PubMed ESearch 返回格式异常。") from exc
+        error_message = _extract_esearch_errors(payload)
+        if error_message:
+            raise PubMedError(f"PubMed 检索式错误：{error_message}")
+        try:
+            result = payload["esearchresult"]
+            ids = result.get("idlist") or []
+        except (KeyError, TypeError) as exc:
+            raise PubMedError("PubMed ESearch 返回格式异常。") from exc
+        return [str(item) for item in ids]
+
     def _efetch(self, pmids: list[str], *, batch_size: int = 200) -> list[dict]:
         """分批 EFetch，保持 PMID 顺序。"""
         if not pmids:
@@ -182,6 +269,146 @@ def _text(element: ET.Element | None) -> str | None:
 
 def _find_text(root: ET.Element, path: str) -> str | None:
     return _text(root.find(path))
+
+
+def _filter_entry_terms(descriptor: str, original: str, terms: list[str]) -> list[str]:
+    """去掉与官方名/原文重复的入口词，并限制数量。"""
+    skip = {descriptor.casefold(), original.casefold()}
+    unique: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        key = term.casefold()
+        if not term or key in skip or key in seen:
+            continue
+        seen.add(key)
+        unique.append(term)
+        if len(unique) >= MAX_MESH_ENTRY_TERMS:
+            break
+    return unique
+
+
+def _normalize_mesh_key(text: str) -> str:
+    """忽略大小写、空格与标点，便于比对入口词。"""
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def parse_mesh_esummary_item(item: dict[str, Any]) -> tuple[str, str, list[str]] | None:
+    """从 ESummary 单条记录取出 (官方名, 字段标签, 入口词)。"""
+    raw_terms = item.get("ds_meshterms") or []
+    if not isinstance(raw_terms, list):
+        return None
+    terms = [str(term).strip() for term in raw_terms if str(term).strip()]
+    if not terms:
+        return None
+    record_type = str(item.get("ds_recordtype") or "")
+    mapped = str(item.get("ds_headingmappedto") or "").strip()
+    if record_type == "supplemental-record":
+        if mapped:
+            return mapped, "MeSH Terms", terms
+        return terms[0], "Supplementary Concept", terms[1:]
+    return terms[0], "MeSH Terms", terms[1:]
+
+
+def _mesh_term_score(query: str, terms: list[str], record_type: str) -> tuple[int, int]:
+    """(匹配强度, 是否描述符)。强度 0 表示对不上，不得采用。"""
+    query_key = _normalize_mesh_key(query)
+    if not query_key:
+        return (0, 0)
+    term_keys = [_normalize_mesh_key(term) for term in terms if term]
+    is_descriptor = 1 if record_type == "descriptor" else 0
+    if any(key == query_key for key in term_keys):
+        return (2, is_descriptor)
+    if len(query_key) >= 4 and any(
+        query_key in key or (len(key) >= 4 and key in query_key) for key in term_keys
+    ):
+        return (1, is_descriptor)
+    return (0, 0)
+
+
+def _mesh_summaries_from_payload(
+    payload: dict[str, Any], ids: list[str]
+) -> list[dict[str, Any]]:
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return []
+    summaries: list[dict[str, Any]] = []
+    for uid in ids:
+        item = result.get(uid)
+        if isinstance(item, dict):
+            summaries.append(item)
+    return summaries
+
+
+def select_best_mesh_summary(
+    query: str, summaries: list[dict[str, Any]]
+) -> tuple[dict[str, Any], tuple[str, str, list[str]]] | None:
+    """在候选中选与用户原文对得上的记录；对不上则返回 None，不编造。"""
+    ranked: list[tuple[tuple[int, int, int], dict[str, Any], tuple[str, str, list[str]]]] = []
+    for index, item in enumerate(summaries):
+        parsed = parse_mesh_esummary_item(item)
+        if parsed is None:
+            continue
+        descriptor, _tag, extra = parsed
+        score = _mesh_term_score(
+            query,
+            [descriptor, *extra],
+            str(item.get("ds_recordtype") or ""),
+        )
+        if score[0] <= 0:
+            continue
+        ranked.append(((*score, -index), item, parsed))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    _score, item, parsed = ranked[0]
+    return item, parsed
+
+
+def parse_mesh_xml(xml_text: str) -> tuple[str, str, list[str]] | None:
+    """解析 MeSH EFetch XML，返回 (官方名, PubMed 字段标签, 入口词)。"""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise PubMedError("MeSH XML 解析失败。") from exc
+
+    descriptor_el = root.find(".//DescriptorRecord")
+    if descriptor_el is not None:
+        name = _find_text(descriptor_el, "DescriptorName/String") or _find_text(
+            descriptor_el, ".//DescriptorName/String"
+        )
+        if not name:
+            return None
+        terms = _collect_mesh_terms(descriptor_el)
+        return name, "MeSH Terms", terms
+
+    supplemental_el = root.find(".//SupplementalRecord")
+    if supplemental_el is not None:
+        mapped = _find_text(
+            supplemental_el,
+            ".//DescriptorReferredTo/DescriptorName/String",
+        )
+        supp_name = _find_text(supplemental_el, "SupplementalRecordName/String") or _find_text(
+            supplemental_el, ".//SupplementalRecordName/String"
+        )
+        terms = _collect_mesh_terms(supplemental_el)
+        if mapped:
+            return mapped, "MeSH Terms", terms
+        if supp_name:
+            return supp_name, "Supplementary Concept", terms
+        return None
+    return None
+
+
+def _collect_mesh_terms(record: ET.Element) -> list[str]:
+    """收集非倒置入口词。"""
+    terms: list[str] = []
+    for term_el in record.findall(".//TermList/Term"):
+        if term_el.get("IsPermutedTermYN") == "Y":
+            continue
+        text = _find_text(term_el, "String")
+        if text:
+            terms.append(text)
+    return terms
 
 
 def parse_pubmed_xml(xml_text: str) -> list[dict]:
